@@ -1,0 +1,36 @@
+@startuml AbsenceSaga
+
+actor Employee
+participant "API Gateway" as Gateway
+participant "AbsenceService (Saga)" as Absence
+participant "EmployeeService" as EmployeeSvc
+participant Manager
+participant HR
+participant "AttendanceService" as Attendance
+database "RabbitMQ" as MQ
+
+== Request ==
+Employee -> Gateway: POST /api/absences
+Gateway -> Absence: CreateLeaveRequest
+Absence -> EmployeeSvc: GET /api/employees/{id}/status
+EmployeeSvc --> Absence: 200 OK (Active)
+Absence -> Absence: PlaceHold (DB)
+Absence -> MQ: Publish LeaveHoldPlaced
+MQ -> Manager: Notify
+MQ -> HR: Notify
+
+== Manager approves ==
+Manager -> Gateway: POST /api/absences/{id}/manager-approve
+Gateway -> Absence: ManagerApprove
+Absence -> MQ: Publish LeaveManagerApproved
+
+== HR approves ==
+HR -> Gateway: POST /api/absences/{id}/hr-approve
+Gateway -> Absence: HRApprove
+Absence -> Absence: Finalize (hold -> deduct)
+Absence -> MQ: Publish LeaveFinalized
+MQ -> Attendance: Consume LeaveFinalized
+Attendance -> Attendance: Mark days OnLeave
+Attendance --> MQ: Ack
+
+@enduml
